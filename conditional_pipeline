@@ -1,0 +1,35 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Test') {
+            steps {
+                script {
+                    def testResult = sh(script: 'sh test.sh', returnStatus: true)
+
+                    if (testResult == 0) {
+                        echo 'Tests passed'
+                    } else {
+                        echo 'Tests failed'
+                        error('Stopping pipeline because tests failed')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh 'sh deploy_conditional.sh'
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Notification: Tests failed, deployment stopped'
+        }
+        success {
+            echo 'Notification: Tests passed, deployment done'
+        }
+    }
+}

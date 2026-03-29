@@ -1,0 +1,30 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Deploy') {
+            steps {
+                script {
+                    def deployResult = sh(script: './deploy.sh', returnStatus: true)
+
+                    if (deployResult == 0) {
+                        echo 'Deployment successful'
+                    } else {
+                        echo 'Deployment failed'
+                        sh './rollback.sh'
+                        error('Rollback executed because deployment failed')
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Notification: Deployment failed and rollback was done'
+        }
+        success {
+            echo 'Notification: Deployment successful'
+        }
+    }
+}

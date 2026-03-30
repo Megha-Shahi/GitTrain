@@ -27,14 +27,14 @@ pipeline {
     post {
     success {
         emailext(
-            to: 'yourmail@gmail.com',
+            to:'meghak7295@gmail.com',
             subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
             body: "Tests passed and deployment completed successfully."
         )
     }
     failure {
         emailext(
-            to: 'yourmail@gmail.com',
+            to: 'meghak7295@gmail.com',
             subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
             body: "Tests failed, so deployment was stopped."
         )

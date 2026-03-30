@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+
+    environment {
+        STORE_DIR = "/var/lib/jenkins/rollback_store/${JOB_NAME}"
+        LAST_SUCCESS_FILE = "/var/lib/jenkins/rollback_store/${JOB_NAME}/last_successful_build.txt"
+        ROLLBACK_BUILD = ""
+    }
+
+    stages {
+        stage('Prepare Artifact') {
+            steps {
+                sh 'mkdir -p "$STORE_DIR"'
+                sh 'echo "artifact from build ${BUILD_NUMBER}" > app-${BUILD_NUMBER}.txt'
+                archiveArtifacts artifacts: "app-${BUILD_NUMBER}.txt", fingerprint: true
+            }
+        }
+
+        stage('Deploy Current Build') {
+            steps {
+                script {
+                    def deployResult = sh(
+                        script: "sh deploy_build.sh app-${BUILD_NUMBER}.txt",
+                        returnStatus: true
+                    )
+
+                    if (deployResult == 0) {
+                        sh """
+                            cp app-${BUILD_NUMBER}.txt ${STORE_DIR}/app-${BUILD_NUMBER}.txt
+                            echo ${BUILD_NUMBER} > ${LAST_SUCCESS_FILE}
+                        """
+                        echo "Deployment successful for build ${BUILD_NUMBER}"
+                    } else {
+                        echo "Deployment failed for build ${BUILD_NUMBER}"
+
+                        def previousExists = sh(
+                            script: "test -f ${LAST_SUCCESS_FILE}",
+                            returnStatus: true
+                        )
+
+                        if (previousExists == 0) {
+                            env.ROLLBACK_BUILD = sh(
+                                script: "cat ${LAST_SUCCESS_FILE}",
+                                returnStdout: true
+                            ).trim()
+
+                            echo "Previous successful build: ${env.ROLLBACK_BUILD}"
+
+                            sh "sh rollback_build.sh ${STORE_DIR}/app-${env.ROLLBACK_BUILD}.txt"
+
+                            error("Rolled back to previous successful build #${env.ROLLBACK_BUILD}")
+                        } else {
+                            error("Deployment failed and no previous successful build is available")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext(
+                to: 'meghak7295@gmail.com',
+                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "Deployment successful for build #${env.BUILD_NUMBER}."
+            )
+        }
+
+        failure {
+            script {
+                if (env.ROLLBACK_BUILD?.trim()) {
+                    emailext(
+                        to: 'meghak7295@gmail.com',
+                        subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                        body: "Deployment failed for build #${env.BUILD_NUMBER}. Rolled back to previous successful build #${env.ROLLBACK_BUILD}."
+                    )
+                } else {
+                    emailext(
+                        to: 'meghak7295@gmail.com',
+                        subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                        body: "Deployment failed for build #${env.BUILD_NUMBER}, and no previous successful build was available for rollback."
+                    )
+                }
+            }
+        }
+    }
+}

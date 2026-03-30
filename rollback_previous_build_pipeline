@@ -1,12 +1,17 @@
 pipeline {
     agent any
+   
 
+   //WORKSPACE is the Jenkins job folder for this project.
     environment {
         APP_DIR = "${WORKSPACE}/myapp"
+        //this means: inside myapp, create a releases folder.
         RELEASES_DIR = "${WORKSPACE}/myapp/releases"
+        //It will point to the currently active build
         CURRENT_LINK = "${WORKSPACE}/myapp/current"
+        //This is a text file where we store the last successful build number.
         LAST_SUCCESS_FILE = "${WORKSPACE}/last_successful_build.txt"
-        TO_MAIL = "yourmail@example.com"
+        TO_MAIL = "meghak7295@example.com"
     }
 
     stages {
@@ -14,7 +19,11 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p "$RELEASES_DIR/build-$BUILD_NUMBER"
+                    //This is a text file where we store the last successful build number.
                     echo "This is build $BUILD_NUMBER" > "$RELEASES_DIR/build-$BUILD_NUMBER/app.txt"
+                    //ln -s it creates a symbolic link
+                   //-f If current already exists, replace it.
+                    //n If current already exists, replace it.
                     ln -sfn "$RELEASES_DIR/build-$BUILD_NUMBER" "$CURRENT_LINK"
                     echo "Deployed build-$BUILD_NUMBER"
                 '''
@@ -54,12 +63,12 @@ Current build is now the last successful build.
 
                 echo "Build failed. Rolling back to build ${lastOk}"
 
-                sh '''
-                    LAST_OK=$(cat "$LAST_SUCCESS_FILE")
-                    ln -sfn "$RELEASES_DIR/build-$LAST_OK" "$CURRENT_LINK"
+                sh """
+                    //moves the current symlink back to the last good build.
+                    ln -sfn "$RELEASES_DIR/build-${lastOk}" "$CURRENT_LINK"
                     echo "After rollback, current points to:"
                     readlink -f "$CURRENT_LINK"
-                '''
+                """
 
                 emailext(
                     to: "${TO_MAIL}",

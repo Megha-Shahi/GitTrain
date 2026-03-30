@@ -2,97 +2,75 @@ pipeline {
     agent any
 
     environment {
-        STORE_DIR = "/var/lib/jenkins/rollback_store/${JOB_NAME}"
-        LAST_SUCCESS_FILE = "/var/lib/jenkins/rollback_store/${JOB_NAME}/last_successful_build.txt"
-        ROLLBACK_BUILD = ""
+        APP_DIR = "${WORKSPACE}/myapp"
+        RELEASES_DIR = "${WORKSPACE}/myapp/releases"
+        CURRENT_LINK = "${WORKSPACE}/myapp/current"
+        LAST_SUCCESS_FILE = "${WORKSPACE}/last_successful_build.txt"
+        TO_MAIL = "yourmail@example.com"
     }
 
     stages {
-        stage('Prepare Artifact') {
+        stage('Deploy Current Build') {
             steps {
                 sh '''
-                    mkdir -p "$STORE_DIR"
-                    echo "artifact from build $BUILD_NUMBER" > "app-$BUILD_NUMBER.txt"
+                    mkdir -p "$RELEASES_DIR/build-$BUILD_NUMBER"
+                    echo "This is build $BUILD_NUMBER" > "$RELEASES_DIR/build-$BUILD_NUMBER/app.txt"
+                    ln -sfn "$RELEASES_DIR/build-$BUILD_NUMBER" "$CURRENT_LINK"
+                    echo "Deployed build-$BUILD_NUMBER"
                 '''
-                archiveArtifacts artifacts: "app-${env.BUILD_NUMBER}.txt", fingerprint: true
             }
         }
 
-        stage('Deploy Current Build') {
+        stage('Simulate Result') {
             steps {
-                script {
-                    def currentArtifact = "app-${env.BUILD_NUMBER}.txt"
-
-                    def deployResult = sh(
-                        script: "sh deploy_build.sh ${currentArtifact}",
-                        returnStatus: true
-                    )
-
-                    if (deployResult == 0) {
-                        sh """
-                            set -e
-                            cp ${currentArtifact} ${env.STORE_DIR}/${currentArtifact}
-                            echo ${env.BUILD_NUMBER} > ${env.LAST_SUCCESS_FILE}
-                        """
-                        echo "Deployment successful for build ${env.BUILD_NUMBER}"
-                    } else {
-                        echo "Deployment failed for build ${env.BUILD_NUMBER}"
-
-                        def previousExists = sh(
-                            script: "test -f ${env.LAST_SUCCESS_FILE}",
-                            returnStatus: true
-                        )
-
-                        if (previousExists == 0) {
-                            def previousBuild = sh(
-                                script: "cat ${env.LAST_SUCCESS_FILE}",
-                                returnStdout: true
-                            ).trim()
-
-                            if (!previousBuild || previousBuild == "null") {
-                                error("Previous successful build number is invalid")
-                            }
-
-                            env.ROLLBACK_BUILD = previousBuild
-
-                            echo "Previous successful build: ${env.ROLLBACK_BUILD}"
-                            sh "ls -l ${env.STORE_DIR}"
-                            sh "sh rollback_build.sh ${env.STORE_DIR}/app-${env.ROLLBACK_BUILD}.txt}"
-
-                            error("Rolled back to previous successful build #${env.ROLLBACK_BUILD}")
-                        } else {
-                            error("Deployment failed and no previous successful build is available")
-                        }
-                    }
-                }
+                sh 'exit 0'
             }
         }
     }
 
     post {
         success {
+            echo "Build succeeded"
+            sh 'echo $BUILD_NUMBER > "$LAST_SUCCESS_FILE"'
+
             emailext(
-                to: 'meghak7295@gmail.com',
-                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: "Deployment successful for build #${env.BUILD_NUMBER}."
+                to: "${TO_MAIL}",
+                subject: "Jenkins Build Success: ${JOB_NAME} #${BUILD_NUMBER}",
+                body: """Build succeeded.
+
+Job: ${JOB_NAME}
+Build: ${BUILD_NUMBER}
+Current build is now the last successful build.
+"""
             )
         }
 
         failure {
             script {
-                if (env.ROLLBACK_BUILD?.trim()) {
-                    emailext(
-                        to: 'meghak7295@gmail.com',
-                        subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                        body: "Deployment failed for build #${env.BUILD_NUMBER}. Rolled back to previous successful build #${env.ROLLBACK_BUILD}."
-                    )
-                } else {
-                    emailext(
-                        to: 'meghak7295@gmail.com',
-                        subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                        body: "Deployment failed for build #${env.BUILD_NUMBER}, and no previous successful build was available for rollback."
-                    )
-                }
+                def lastOk = sh(
+                    script: 'cat "$LAST_SUCCESS_FILE"',
+                    returnStdout: true
+                ).trim()
+
+                echo "Build failed. Rolling back to build ${lastOk}"
+
+                sh '''
+                    LAST_OK=$(cat "$LAST_SUCCESS_FILE")
+                    ln -sfn "$RELEASES_DIR/build-$LAST_OK" "$CURRENT_LINK"
+                    echo "After rollback, current points to:"
+                    readlink -f "$CURRENT_LINK"
+                '''
+
+                emailext(
+                    to: "${TO_MAIL}",
+                    subject: "Jenkins Build Failed and Rolled Back: ${JOB_NAME} #${BUILD_NUMBER}",
+                    body: """Build failed.
+
+Job: ${JOB_NAME}
+Failed build: ${BUILD_NUMBER}
+Rolled back to build: ${lastOk}
+"""
+                )
             }
         }
     }

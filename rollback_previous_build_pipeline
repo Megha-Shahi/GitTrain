@@ -19,11 +19,11 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p "$RELEASES_DIR/build-$BUILD_NUMBER"
-                    //This is a text file where we store the last successful build number.
+                    # Put app files into the build folder
                     echo "This is build $BUILD_NUMBER" > "$RELEASES_DIR/build-$BUILD_NUMBER/app.txt"
-                    //ln -s it creates a symbolic link
-                   //-f If current already exists, replace it.
-                    //n If current already exists, replace it.
+                    # ln -s creates a symbolic link
+                    # -f: replace if current already exists
+                    # -n: treat current as a file, not a directory
                     ln -sfn "$RELEASES_DIR/build-$BUILD_NUMBER" "$CURRENT_LINK"
                     echo "Deployed build-$BUILD_NUMBER"
                 '''
@@ -57,14 +57,19 @@ Current build is now the last successful build.
         failure {
             script {
                 def lastOk = sh(
-                    script: 'cat "$LAST_SUCCESS_FILE"',
+                    script: 'if [ -f "$LAST_SUCCESS_FILE" ]; then cat "$LAST_SUCCESS_FILE"; else echo "none"; fi',
                     returnStdout: true
                 ).trim()
+
+                if (lastOk == 'none') {
+                    echo "No previous successful build found. Cannot roll back."
+                    return
+                }
 
                 echo "Build failed. Rolling back to build ${lastOk}"
 
                 sh """
-                    //moves the current symlink back to the last good build.
+                    # moves the current symlink back to the last good build
                     ln -sfn "$RELEASES_DIR/build-${lastOk}" "$CURRENT_LINK"
                     echo "After rollback, current points to:"
                     readlink -f "$CURRENT_LINK"

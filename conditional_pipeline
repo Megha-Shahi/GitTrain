@@ -25,11 +25,19 @@ pipeline {
     }
 
     post {
-        failure {
-            echo 'Notification: Tests failed, deployment stopped'
-        }
-        success {
-            echo 'Notification: Tests passed, deployment done'
-        }
+    success {
+        emailext(
+            to: 'yourmail@gmail.com',
+            subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "Tests passed and deployment completed successfully."
+        )
     }
+    failure {
+        emailext(
+            to: 'yourmail@gmail.com',
+            subject: "FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "Tests failed, so deployment was stopped."
+        )
+    }
+}
 }

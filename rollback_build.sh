@@ -2,8 +2,12 @@
 
 artifact=$1
 
-echo "Deploying artifact: $artifact"
-cat "$artifact"
+echo "Rolling back using artifact: $artifact"
 
-# first keep success
-exit 0
+if [ ! -f "$artifact" ]; then
+    echo "Rollback artifact not found"
+    exit 1
+fi
+
+cat "$artifact"
+echo "Rollback completed"

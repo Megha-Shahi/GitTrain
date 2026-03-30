@@ -10,43 +10,54 @@ pipeline {
     stages {
         stage('Prepare Artifact') {
             steps {
-                sh 'mkdir -p "$STORE_DIR"'
-                sh 'echo "artifact from build ${BUILD_NUMBER}" > app-${BUILD_NUMBER}.txt'
-                archiveArtifacts artifacts: "app-${BUILD_NUMBER}.txt", fingerprint: true
+                sh '''
+                    mkdir -p "$STORE_DIR"
+                    echo "artifact from build $BUILD_NUMBER" > "app-$BUILD_NUMBER.txt"
+                '''
+                archiveArtifacts artifacts: "app-${env.BUILD_NUMBER}.txt", fingerprint: true
             }
         }
 
         stage('Deploy Current Build') {
             steps {
                 script {
+                    def currentArtifact = "app-${env.BUILD_NUMBER}.txt"
+
                     def deployResult = sh(
-                        script: "sh deploy_build.sh app-${BUILD_NUMBER}.txt",
+                        script: "sh deploy_build.sh ${currentArtifact}",
                         returnStatus: true
                     )
 
                     if (deployResult == 0) {
                         sh """
-                            cp app-${BUILD_NUMBER}.txt ${STORE_DIR}/app-${BUILD_NUMBER}.txt
-                            echo ${BUILD_NUMBER} > ${LAST_SUCCESS_FILE}
+                            set -e
+                            cp ${currentArtifact} ${env.STORE_DIR}/${currentArtifact}
+                            echo ${env.BUILD_NUMBER} > ${env.LAST_SUCCESS_FILE}
                         """
-                        echo "Deployment successful for build ${BUILD_NUMBER}"
+                        echo "Deployment successful for build ${env.BUILD_NUMBER}"
                     } else {
-                        echo "Deployment failed for build ${BUILD_NUMBER}"
+                        echo "Deployment failed for build ${env.BUILD_NUMBER}"
 
                         def previousExists = sh(
-                            script: "test -f ${LAST_SUCCESS_FILE}",
+                            script: "test -f ${env.LAST_SUCCESS_FILE}",
                             returnStatus: true
                         )
 
                         if (previousExists == 0) {
-                            env.ROLLBACK_BUILD = sh(
-                                script: "cat ${LAST_SUCCESS_FILE}",
+                            def previousBuild = sh(
+                                script: "cat ${env.LAST_SUCCESS_FILE}",
                                 returnStdout: true
                             ).trim()
 
-                            echo "Previous successful build: ${env.ROLLBACK_BUILD}"
+                            if (!previousBuild || previousBuild == "null") {
+                                error("Previous successful build number is invalid")
+                            }
 
-                            sh "sh rollback_build.sh ${STORE_DIR}/app-${env.ROLLBACK_BUILD}.txt"
+                            env.ROLLBACK_BUILD = previousBuild
+
+                            echo "Previous successful build: ${env.ROLLBACK_BUILD}"
+                            sh "ls -l ${env.STORE_DIR}"
+                            sh "sh rollback_build.sh ${env.STORE_DIR}/app-${env.ROLLBACK_BUILD}.txt}"
 
                             error("Rolled back to previous successful build #${env.ROLLBACK_BUILD}")
                         } else {

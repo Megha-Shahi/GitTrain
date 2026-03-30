@@ -6,4 +6,4 @@ echo "Deploying artifact: $artifact"
 cat "$artifact"
 
 # first keep success
-exit 0
+exit 1
